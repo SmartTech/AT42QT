@@ -25,13 +25,16 @@ Name    : begin
 Purpose : initialize AT42QT with default address and no reset
 ============================================================================*/
 uint8_t AT42QT::begin() {
+  
   wire->begin();
+  
   if(reset_pin != PIN_UNCONNECTED) {
     pinMode(reset_pin, OUTPUT);
     digitalWrite(reset_pin, HIGH);
+	// Reset QT device
+	reset();
   }
-  // Reset QT device
-  reset();
+  
   // Check communication is ready and able to read Chip ID
   if(!GetCommsReady()) {
 	  Serial.println("GetCommsReady error");
@@ -42,12 +45,26 @@ uint8_t AT42QT::begin() {
 	  Serial.println("ReadSetupBlock error");
 	  return false;
   }
+  Serial.println("LP_mode:           " + String(setup_block.LP_Mode));
+  Serial.println("BREP:              " + String(setup_block.BREP));
+  Serial.println("NDRIFT:            " + String(setup_block.NDRIFT));
+  Serial.println("PDRIFT:            " + String(setup_block.PDRIFT));
+  Serial.println("NDIL:              " + String(setup_block.NDIL));
+  Serial.println("NRD:               " + String(setup_block.NRD));
+  Serial.println("DHT_AWAKE:         " + String(setup_block.DHT_AWAKE));
+  Serial.println("Slider_Num_Keys:   " + String(setup_block.Slider_Num_Keys));
+  Serial.println("Slider_HYST:       " + String(setup_block.Slider_HYST));
+  Serial.println("Slider_Resolution: " + String(setup_block.Slider_Resolution));
   /* TO DO : modify setup block parameters here
    * from default valus if required 
    * For example: To set NTHR for Key 0 to 20
    * setup_block.key0_NTHR = 20; 
    */
   // Write setup block
+  setup_block.LP_Mode = 1;
+  setup_block.Slider_Num_Keys = 6;
+  setup_block.Slider_HYST = 6;
+  setup_block.Slider_Resolution = 6;
   return WriteSetupBlock(sizeof(setup_block),(uint8_t *)&setup_block);
 }
 
@@ -69,7 +86,8 @@ Purpose : External Interrupt from AT42QT
 ============================================================================*/
 void AT42QT::IRQ_handler(void) {
   // read all status-bytes
-  ReadKeyStatus(sizeof(QtStatus), QtStatus);
+  Serial.print("ReadKeyStatus: ");
+  Serial.println(ReadKeyStatus(sizeof(QtStatus), QtStatus));
   // TO DO : process the received data here...
 }
 
@@ -88,12 +106,28 @@ uint8_t AT42QT::WriteSetupBlock(uint8_t WriteLength, uint8_t *WritePtr) {
   wire->write(QT_SETUPS_WRITE_UNLOCK);
   wire->write(WRITE_UNLOCK);
   error = wire->endTransmission();
+  delay(1);
 #endif
-  wire->beginTransmission(addr);
-  wire->write(QT_SETUPS_BLOCK_ADDR);
-  wire->write(WritePtr, WriteLength);
-  error = wire->endTransmission();
-  return false;
+  // Не хватает буфера чтоб послать сразу 68 байт,
+  // поэтому отправляем по 30 байт
+  uint8_t bytesPerWrite = 30;
+  uint8_t counts = 0;
+  uint8_t pointer = 0;
+  uint8_t counter = 0;
+  Serial.println();
+  while(counts<WriteLength) {
+	  counts += bytesPerWrite;
+	  if(counts > WriteLength) bytesPerWrite = WriteLength - (bytesPerWrite*counter);
+	  wire->beginTransmission(addr);
+	  wire->write(QT_SETUPS_BLOCK_ADDR + pointer);
+	  wire->write(&WritePtr[pointer], bytesPerWrite);
+	  error = wire->endTransmission();
+	  if(error) return false;
+	  pointer += bytesPerWrite;
+	  counter++;
+	  delay(1);
+  }
+  return true;
 }
 
 /*============================================================================
@@ -116,6 +150,7 @@ uint8_t AT42QT::ReadSetupBlock(uint8_t ReadLength, uint8_t *ReadPtr) {
 	  Serial.println(error);
 	  return false;
   }
+  delay(1);
   wire->requestFrom(addr, ReadLength);
   uint8_t result_lenght = 0;
   while(wire->available()) {
@@ -138,6 +173,7 @@ uint8_t AT42QT::ReadKeyStatus(uint8_t ReadLength, uint8_t *ReadPtr) {
   wire->write(QT_STATUS_ADDR);
   error = wire->endTransmission();
   if(error) return false;
+  delay(1);
   wire->requestFrom(addr, ReadLength);
   static uint8_t result_lenght = 0;
   while(wire->available()) {
@@ -153,7 +189,7 @@ Purpose :   Check communication is ready and able to read Chip ID
 ============================================================================*/
 uint8_t AT42QT::GetCommsReady(void) {
   uint8_t error;
-  uint8_t chip_id;
+  uint8_t chip_id = 0;
   wire->beginTransmission(addr);
   wire->write(QT_CHIP_ID);
   error = wire->endTransmission();
@@ -164,17 +200,10 @@ uint8_t AT42QT::GetCommsReady(void) {
 	  Serial.println(error);
 	  return false;
   }
+  delay(1);
   wire->requestFrom(addr, 1);
   while(wire->available()) chip_id = wire->read();
-  int a = chip_id, b = QT_DEVICE_ID;
-  Serial.print("ChipID: ");
-  Serial.print(a);
-  Serial.print(" QT_DEVICE_ID: ");
-  Serial.print(b);
-  Serial.print(" is ");
-  if(a == b) Serial.println(1);
-  else Serial.println(0);
-  return true;
+  return (chip_id == QT_DEVICE_ID);
 }
 
 /*============================================================================

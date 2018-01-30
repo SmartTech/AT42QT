@@ -42,7 +42,7 @@ Macros
 ============================================================================*/
 
 // Chip ID (read from device-address 0)
-#define QT_DEVICE_ID	68// 0x11
+#define QT_DEVICE_ID	0x11
 
 // I2C address (I2CA1 = I2CA0 = 0)	
 #define QT_I2C_ADDRESS  0x0D
