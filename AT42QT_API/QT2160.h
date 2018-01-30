@@ -305,7 +305,7 @@ typedef struct
 	uint8_t GPIO_GPO_PWM2;	//GPIOs
 	
 	// PWM Level
-	uint8_t PWM_level;	
+	uint8_t PWM_level;
 	
 	// GPIO Wake
 	uint8_t GPIO_Wake;	

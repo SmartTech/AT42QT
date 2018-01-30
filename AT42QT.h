@@ -56,6 +56,13 @@ class AT42QT {
   uint8_t begin(uint8_t _addr, uint8_t _reset_pin=PIN_UNCONNECTED);
   
   void    reset(void);
+  
+  void    pwm(uint8_t gpio, uint8_t pwm);
+  
+  void    setGPIO(uint8_t state);
+  uint8_t getGPIO();
+  
+  void    setPWM(uint8_t pwmLevel);
 
   void    IRQ_handler(void);
   

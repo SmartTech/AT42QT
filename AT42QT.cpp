@@ -218,3 +218,20 @@ void AT42QT::reset(void) {
   digitalWrite(reset_pin, HIGH);
 }
 
+void AT42QT::pwm(uint8_t gpio, uint8_t pwm) {
+		 if(!pwm)     setup_block.PWM_level = 255;
+	else if(pwm==255) setup_block.PWM_level = 0;
+	else setup_block.PWM_level = map(pwm, 1, 254, 11, 249);
+}
+
+void AT42QT::setGPIO(uint8_t state) {
+	
+}
+
+uint8_t AT42QT::getGPIO() {
+	
+}
+
+void AT42QT::setPWM(uint8_t pwmLevel) {
+	
+}
