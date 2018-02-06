@@ -37,35 +37,14 @@ uint8_t AT42QT::begin() {
   
   // Check communication is ready and able to read Chip ID
   if(!GetCommsReady()) {
-	  Serial.println("GetCommsReady error");
 	  return false;
   }
   // Read setup block
-  if(!ReadSetupBlock(sizeof(setup_block), (uint8_t *)&setup_block)) {
-	  Serial.println("ReadSetupBlock error");
+  if(!readSetup()) {
 	  return false;
   }
-  Serial.println("LP_mode:           " + String(setup_block.LP_Mode));
-  Serial.println("BREP:              " + String(setup_block.BREP));
-  Serial.println("NDRIFT:            " + String(setup_block.NDRIFT));
-  Serial.println("PDRIFT:            " + String(setup_block.PDRIFT));
-  Serial.println("NDIL:              " + String(setup_block.NDIL));
-  Serial.println("NRD:               " + String(setup_block.NRD));
-  Serial.println("DHT_AWAKE:         " + String(setup_block.DHT_AWAKE));
-  Serial.println("Slider_Num_Keys:   " + String(setup_block.Slider_Num_Keys));
-  Serial.println("Slider_HYST:       " + String(setup_block.Slider_HYST));
-  Serial.println("Slider_Resolution: " + String(setup_block.Slider_Resolution));
-  /* TO DO : modify setup block parameters here
-   * from default valus if required 
-   * For example: To set NTHR for Key 0 to 20
-   * setup_block.key0_NTHR = 20; 
-   */
-  // Write setup block
-  setup_block.LP_Mode = 1;
-  setup_block.Slider_Num_Keys = 6;
-  setup_block.Slider_HYST = 6;
-  setup_block.Slider_Resolution = 6;
-  return WriteSetupBlock(sizeof(setup_block),(uint8_t *)&setup_block);
+  return true;
+  //return WriteSetupBlock(sizeof(setup_block),(uint8_t *)&setup_block);
 }
 
 /*============================================================================
@@ -86,100 +65,158 @@ Purpose : External Interrupt from AT42QT
 ============================================================================*/
 void AT42QT::IRQ_handler(void) {
   // read all status-bytes
-  Serial.print("ReadKeyStatus: ");
-  Serial.println(ReadKeyStatus(sizeof(QtStatus), QtStatus));
+  static uint32_t lastTouchMillis = 0;
+  //if(millis()-lastTouchMillis>50) {
+	  readStatus();
+	//  printStatus();
+	//  lastTouchMillis = millis();
+  //}
   // TO DO : process the received data here...
 }
 
-/*============================================================================
-Name    :   WriteSetupBlock
-------------------------------------------------------------------------------
-Purpose : write entire setup block to QT-device
-Input   : WriteLength : Number of bytes to write
-WritePtr: Pointer to byte array containing write-data
-Return  : TRUE if write successful, else FALSE
-============================================================================*/
-uint8_t AT42QT::WriteSetupBlock(uint8_t WriteLength, uint8_t *WritePtr) {
-  uint8_t error;
-#if (QT_DEVICE == QT60240)  
-  wire->beginTransmission(addr);
-  wire->write(QT_SETUPS_WRITE_UNLOCK);
-  wire->write(WRITE_UNLOCK);
-  error = wire->endTransmission();
-  delay(1);
+
+uint8_t AT42QT::write(uint8_t regAddr, uint8_t* dataPtr, uint8_t dataSize) {
+	// Размер буфера I2C ограничен 32 байтами,
+	// поэтому реализуем поочередную запись по 30 байт
+	uint8_t error = 0;
+    uint8_t counts = 0;
+    uint8_t pointer = 0;
+    uint8_t counter = 0;
+    uint8_t bytesPerWrite = 30;
+	if(!dataSize) {
+		wire->beginTransmission(addr);
+	    wire->write(regAddr);
+	    error = wire->endTransmission();
+		delay(1);
+		return !error;
+	}
+    while(counts<dataSize) {
+	    counts += bytesPerWrite;
+		if(counts > dataSize) bytesPerWrite = dataSize - (bytesPerWrite*counter);
+	    wire->beginTransmission(addr);
+	    wire->write(regAddr + pointer);
+	    wire->write(&dataPtr[pointer], bytesPerWrite);
+	    error = wire->endTransmission();
+		delay(1);
+	    if(error) return false;
+	    pointer += bytesPerWrite;
+	    counter++;
+	}
+	return !error;
+}
+
+uint8_t AT42QT::read(uint8_t regAddr, uint8_t* dataPtr, uint8_t dataSize) {
+	// Размер буфера I2C ограничен 32 байтами,
+	// поэтому реализуем поочередное чтение по 30 байт
+	uint8_t error = 0;
+    uint8_t counts = 0;
+    uint8_t pointer = 0;
+    uint8_t counter = 0;
+    uint8_t result_lenght = 0;
+    uint8_t bytesPerRead = 30;
+    while(counts<dataSize) {
+	    counts += bytesPerRead;
+		if(counts > dataSize) bytesPerRead = dataSize - (bytesPerRead*counter);
+		if(!write(regAddr + pointer)) return false;
+		wire->requestFrom(addr, bytesPerRead);
+		while(wire->available()) {
+		  dataPtr[result_lenght++] = wire->read();
+		}
+	    pointer += bytesPerRead;
+	    counter++;
+	}
+    return result_lenght;
+}
+
+uint8_t AT42QT::writeReg(uint8_t regAddr, uint8_t value) {
+	if(write(regAddr, &value, sizeof(value))) {
+		if(regAddr >= QT_SETUPS_BLOCK_ADDR) {
+			*((uint8_t*)(&setup_block)-QT_SETUPS_BLOCK_ADDR+regAddr) = value;
+		}
+		return true;
+	}
+	return false;
+}
+
+uint8_t AT42QT::readReg(uint8_t regAddr) {
+	uint8_t value = 0;
+	if(read(regAddr, &value, sizeof(value))) {
+		if(regAddr >= QT_SETUPS_BLOCK_ADDR) {
+			*((uint8_t*)(&setup_block)-QT_SETUPS_BLOCK_ADDR+regAddr) = value;
+		}
+	}
+	return value;
+}
+
+uint8_t AT42QT::readSetup() {
+	return read(QT_SETUPS_BLOCK_ADDR, (uint8_t *)&setup_block, sizeof(setup_block));
+}
+
+uint8_t AT42QT::writeSetup() {
+#if (QT_DEVICE == QT60240)
+	if(!writeReg(QT_SETUPS_WRITE_UNLOCK, WRITE_UNLOCK)) return false;
 #endif
-  // Не хватает буфера чтоб послать сразу 68 байт,
-  // поэтому отправляем по 30 байт
-  uint8_t bytesPerWrite = 30;
-  uint8_t counts = 0;
-  uint8_t pointer = 0;
-  uint8_t counter = 0;
-  Serial.println();
-  while(counts<WriteLength) {
-	  counts += bytesPerWrite;
-	  if(counts > WriteLength) bytesPerWrite = WriteLength - (bytesPerWrite*counter);
-	  wire->beginTransmission(addr);
-	  wire->write(QT_SETUPS_BLOCK_ADDR + pointer);
-	  wire->write(&WritePtr[pointer], bytesPerWrite);
-	  error = wire->endTransmission();
-	  if(error) return false;
-	  pointer += bytesPerWrite;
-	  counter++;
-	  delay(1);
-  }
-  return true;
+	return write(QT_SETUPS_BLOCK_ADDR, (uint8_t *)&setup_block, sizeof(setup_block));
 }
 
-/*============================================================================
-Name    :   ReadSetupBlock
-------------------------------------------------------------------------------
-Purpose : Read entire setup block from QT-device
-Input   : ReadLength  : Number of bytes to read
-ReadPtr : Pointer to byte array for read-data
-Return  : TRUE if read successful, else FALSE
-============================================================================*/
-uint8_t AT42QT::ReadSetupBlock(uint8_t ReadLength, uint8_t *ReadPtr) {
-  uint8_t error;
-  wire->beginTransmission(addr);
-  wire->write(QT_SETUPS_BLOCK_ADDR);
-  error = wire->endTransmission();
-  if(error) {
-	  Serial.print("ReadSetupBlock addr ");
-	  Serial.print(addr);
-	  Serial.print(" error ");
-	  Serial.println(error);
-	  return false;
-  }
-  delay(1);
-  wire->requestFrom(addr, ReadLength);
-  uint8_t result_lenght = 0;
-  while(wire->available()) {
-    ReadPtr[result_lenght++] = wire->read();
-  }
-  return result_lenght;
+#ifdef QT_DEBUG
+void AT42QT::print(const char* str, uint8_t* valuePtr, uint8_t size) {
+	QT_DEBUG.print(DBG); QT_DEBUG.print(str);
+	if(size) QT_DEBUG.print(" :");
+	for(uint8_t i=0; i<size; i++) {
+		QT_DEBUG.print(" ");
+		QT_DEBUG.print(*(valuePtr + i));
+	} QT_DEBUG.println();
 }
 
-/*============================================================================
-Name    :   ReadKeyStatus
-------------------------------------------------------------------------------
-Purpose : Read detection status of all keys
-Input   : ReadLength  : Number of bytes to read
-ReadPtr : Pointer to byte array for read-data
-Return  : TRUE if read successful, else FALSE
-============================================================================*/
-uint8_t AT42QT::ReadKeyStatus(uint8_t ReadLength, uint8_t *ReadPtr) {
-  uint8_t error;
-  wire->beginTransmission(addr);
-  wire->write(QT_STATUS_ADDR);
-  error = wire->endTransmission();
-  if(error) return false;
-  delay(1);
-  wire->requestFrom(addr, ReadLength);
-  static uint8_t result_lenght = 0;
-  while(wire->available()) {
-    ReadPtr[result_lenght++] = wire->read();
-  }
-  return result_lenght;
+void AT42QT::print(const char* str, uint8_t value)  {
+	print(str, &value, 1);
+}
+#endif
+
+void AT42QT::printSetup() {
+#ifdef QT_DEBUG
+    print("QT setup block info:");
+	
+	print("LP_Mode    ", setup_block.LP_Mode);
+	print("BREP       ", setup_block.BREP);
+	print("NDRIFT     ", setup_block.NDRIFT);
+	print("PDRIFT     ", setup_block.PDRIFT);
+	print("NDIL       ", setup_block.NDIL);
+	print("NRD        ", setup_block.NRD);
+	print("DHT_AWAKE  ", setup_block.DHT_AWAKE);
+	print("Slider_Keys", setup_block.Slider_Num_Keys);
+	print("Slider_HYST", setup_block.Slider_HYST);
+	print("Slider_Res ", setup_block.Slider_Resolution);
+	
+	print("Keys_AKS   ", &setup_block.Key0_AKS,  16);
+	print("Keys_NTHR  ", &setup_block.Key0_NTHR, 16);
+	print("Keys_BL    ", &setup_block.Key0_BL,   16);
+	
+	print("GPO_Drive1 ", setup_block.GPIO_GPO_Drive1);
+	print("GPO_Drive2 ", setup_block.GPIO_GPO_Drive2);
+	print("GPIO_Dir   ", setup_block.GPIO_Direction);
+	print("GPO_PWM1   ", setup_block.GPIO_GPO_PWM1);
+	print("GPO_PWM2   ", setup_block.GPIO_GPO_PWM2);
+	print("PWM_level  ", setup_block.PWM_level);
+	print("GPIO_Wake  ", setup_block.GPIO_Wake);
+	print("CC_Keys1   ", setup_block.CC_Keys1);
+	print("CC_Keys2   ", setup_block.CC_Keys2);
+		
+    print("QT setup block end");
+#endif
+}
+
+void AT42QT::printStatus() {
+#ifdef QT_DEBUG
+    print("QT status info:");
+	print("QT_GENERAL_STATUS ", QtStatus[0]);
+	print("QT_KEY_STATUS_1   ", QtStatus[1]);
+	print("QT_KEY_STATUS_2   ", QtStatus[2]);
+	print("QT_SLIDER_POSITION", QtStatus[3]);
+	print("QT_GPIO_READ      ", QtStatus[4]);
+    print("QT status end");
+#endif
 }
 
 /*============================================================================
@@ -188,35 +225,170 @@ Name    :   GetCommsReady
 Purpose :   Check communication is ready and able to read Chip ID
 ============================================================================*/
 uint8_t AT42QT::GetCommsReady(void) {
-  uint8_t error;
-  uint8_t chip_id = 0;
-  wire->beginTransmission(addr);
-  wire->write(QT_CHIP_ID);
-  error = wire->endTransmission();
-  if(error) {
-	  Serial.print("GetCommsReady addr ");
-	  Serial.print(addr);
-	  Serial.print(" error ");
-	  Serial.println(error);
-	  return false;
-  }
-  delay(1);
-  wire->requestFrom(addr, 1);
-  while(wire->available()) chip_id = wire->read();
-  return (chip_id == QT_DEVICE_ID);
+	return (readReg(QT_CHIP_ID)==QT_DEVICE_ID);
+}
+
+uint8_t AT42QT::readStatus(void) {
+  return read(QT_STATUS_ADDR, QtStatus, sizeof(QtStatus));
 }
 
 /*============================================================================
 Name    :   ResetQT
 ------------------------------------------------------------------------------
+Purpose :   Performs a software reset of the QT device
+============================================================================*/
+uint8_t AT42QT::reset(void)  {
+	if(writeReg(QT_RESET, 1)) return true;
+	return false;
+}
+
+/*============================================================================
+Name    :   HardResetQT
+------------------------------------------------------------------------------
 Purpose :   Performs a hardware reset of the QT device
 ============================================================================*/
-void AT42QT::reset(void) {
+void AT42QT::hardReset(void) {
   if(reset_pin == PIN_UNCONNECTED) return;
   digitalWrite(reset_pin, LOW);
   delay(1);
   digitalWrite(reset_pin, HIGH);
 }
+
+/*============================================================================
+Name    :   CalibrateQT
+------------------------------------------------------------------------------
+Purpose :   Performs a calibration of the QT device
+============================================================================*/
+uint8_t AT42QT::calibrate() {
+	if(writeReg(QT_CALIBRATE, 1)) return true;
+	return false;
+}
+
+uint8_t AT42QT::init() {
+	return writeSetup();
+}
+
+void AT42QT::setSlider(uint8_t lenght, uint8_t hyst, uint8_t res) {
+	setup_block.Slider_Num_Keys = constrain(lenght, 0, 8);
+	setup_block.Slider_HYST = constrain(hyst, 0, 15);
+	setup_block.Slider_Resolution = constrain(res, 0, 6);
+}
+
+void AT42QT::setKeyBL(uint8_t num, uint8_t value) {
+	if(num < 16) num += QT_KEY0_BL;
+	if(num < QT_KEY0_BL || num > QT_KEY15_BL) return;
+	*((uint8_t*)(&setup_block)-QT_SETUPS_BLOCK_ADDR+num) = value;
+}
+
+void AT42QT::setKeyAKS(uint8_t num, uint8_t value) {
+	if(num < 16) num += QT_KEY0_AKS_GRP;
+	if(num < QT_KEY0_AKS_GRP || num > QT_KEY15_AKS_GRP) return;
+	*((uint8_t*)(&setup_block)-QT_SETUPS_BLOCK_ADDR+num) = constrain(value, 0, 3);
+}
+
+void AT42QT::setKeyNTHR(uint8_t num, uint8_t value) {
+	if(num < 16) num += QT_KEY0_NTHR;
+	if(num < QT_KEY0_NTHR || num > QT_KEY15_NTHR) return;
+	*((uint8_t*)(&setup_block)-QT_SETUPS_BLOCK_ADDR+num) = constrain(value, 1, 255);
+}
+
+void AT42QT::setKeyCC(uint8_t num, uint8_t value) {
+	if(num>15) return;
+	if(value>1) value = 1;
+	if(num<8) bitWrite(setup_block.CC_Keys1, num,   value);
+	else      bitWrite(setup_block.CC_Keys2, num-8, value);
+}
+
+void AT42QT::setKeyBL(uint8_t numFrom, uint8_t numTo, uint8_t value) {
+	if(numTo < numFrom) numTo = numFrom;
+	for(uint8_t i=numFrom; i<=numTo; i++) setKeyBL(i, value);
+}
+
+void AT42QT::setKeyAKS(uint8_t numFrom, uint8_t numTo, uint8_t value) {
+	if(numTo < numFrom) numTo = numFrom;
+	for(uint8_t i=numFrom; i<=numTo; i++) setKeyAKS(i, value);
+}
+
+void AT42QT::setKeyNTHR(uint8_t numFrom, uint8_t numTo, uint8_t value) {
+	if(numTo < numFrom) numTo = numFrom;
+	for(uint8_t i=numFrom; i<=numTo; i++) setKeyNTHR(i, value);
+}
+
+void AT42QT::setKeyCC(uint8_t numFrom, uint8_t numTo, uint8_t value) {
+	if(numTo < numFrom) numTo = numFrom;
+	for(uint8_t i=numFrom; i<=numTo; i++) setKeyCC(i, value);
+}
+
+uint8_t AT42QT::getKey(uint8_t num) {
+	if(num>15) return 0;
+	     if(num < 8)  return bitRead(QtStatus[1], num);
+	else if(num < 16) return bitRead(QtStatus[2], num-8);
+	else return 0;
+}
+
+uint16_t AT42QT::getKeyMask() {
+	uint16_t value = QtStatus[2];
+	value <<= 8;
+	value |= QtStatus[1];
+	return value;
+}
+
+// -------------------------------------------------------------------
+/*
+uint8_t AT42QT::readKeyBL(uint8_t num) {
+	if(num < 16) num += QT_KEY0_BL;
+	if(num < QT_KEY0_BL || num > QT_KEY15_BL) return;
+	
+    ReadKeyStatus(1, (uint8_t *) setup_block.key0_BL);
+}
+
+
+
+
+
+void AT42QT::writeKeyBL(uint8_t num, uint8_t value) {
+	writeKeyBL(num, num, value);
+}
+
+void AT42QT::writeKeyBL(uint8_t numFrom, uint8_t numTo, uint8_t value) {
+	if(numTo < numFrom) numTo = numFrom;
+	setKeyBL(numFrom, numTo, value);
+	WriteSetupBlock(numTo-numFrom+1, (uint8_t *)&setup_block.key0_BL);
+}
+
+// -------------------------------------------------------------------
+
+
+
+
+
+void AT42QT::writeKeyAKS(uint8_t num, uint8_t value) {
+	writeKeyAKS(num, num, value);
+}
+
+void AT42QT::writeKeyAKS(uint8_t numFrom, uint8_t numTo, uint8_t value) {
+	if(numTo < numFrom) numTo = numFrom;
+	setKeyAKS(numFrom, numTo, value);
+	WriteSetupBlock(numTo-numFrom+1, (uint8_t *)&setup_block.Key0_AKS);
+}
+
+// -------------------------------------------------------------------
+
+
+
+void AT42QT::writeKeyNTHR(uint8_t num, uint8_t value) {
+	writeKeyNTHR(num, num, value);
+}
+
+void AT42QT::writeKeyNTHR(uint8_t numFrom, uint8_t numTo, uint8_t value) {
+	if(numTo < numFrom) numTo = numFrom;
+	setKeyNTHR(numFrom, numTo, value);
+	WriteSetupBlock(numTo-numFrom+1, (uint8_t *)&setup_block.key0_NTHR);
+}
+
+// -------------------------------------------------------------------
+*/
+
 
 void AT42QT::pwm(uint8_t gpio, uint8_t pwm) {
 		 if(!pwm)     setup_block.PWM_level = 255;

@@ -97,6 +97,7 @@ enum { // QT2160 registers
 	QT_KEY_STATUS_2,
 	QT_SLIDER_POSITION,
 	QT_GPIO_READ,
+	QT_SUB_REVISION,
 	QT_CALIBRATE = 10,
 	QT_RESET,
 	QT_LP_MODE,
@@ -255,40 +256,40 @@ typedef struct
 	uint8_t Key15_AKS;
 	
 	// Negative Threshold (NTHR)		
-	uint8_t key0_NTHR;		
-	uint8_t key1_NTHR;	
-	uint8_t key2_NTHR;
-	uint8_t key3_NTHR;
-	uint8_t key4_NTHR;
-	uint8_t key5_NTHR;
-	uint8_t key6_NTHR;
-	uint8_t key7_NTHR;
-	uint8_t key8_NTHR;
-	uint8_t key9_NTHR;
-	uint8_t key10_NTHR;
-	uint8_t key11_NTHR;
-	uint8_t key12_NTHR;
-	uint8_t key13_NTHR;
-	uint8_t key14_NTHR;
-	uint8_t key15_NTHR;
+	uint8_t Key0_NTHR;		
+	uint8_t Key1_NTHR;	
+	uint8_t Key2_NTHR;
+	uint8_t Key3_NTHR;
+	uint8_t Key4_NTHR;
+	uint8_t Key5_NTHR;
+	uint8_t Key6_NTHR;
+	uint8_t Key7_NTHR;
+	uint8_t Key8_NTHR;
+	uint8_t Key9_NTHR;
+	uint8_t Key10_NTHR;
+	uint8_t Key11_NTHR;
+	uint8_t Key12_NTHR;
+	uint8_t Key13_NTHR;
+	uint8_t Key14_NTHR;
+	uint8_t Key15_NTHR;
 	
 	// Burst Length (BL)
-	uint8_t key0_BL;		
-	uint8_t key1_BL;	
-	uint8_t key2_BL;
-	uint8_t key3_BL;
-	uint8_t key4_BL;
-	uint8_t key5_BL;
-	uint8_t key6_BL;
-	uint8_t key7_BL;
-	uint8_t key8_BL;
-	uint8_t key9_BL;
-	uint8_t key10_BL;
-	uint8_t key11_BL;
-	uint8_t key12_BL;
-	uint8_t key13_BL;
-	uint8_t key14_BL;
-	uint8_t key15_BL;
+	uint8_t Key0_BL;		
+	uint8_t Key1_BL;	
+	uint8_t Key2_BL;
+	uint8_t Key3_BL;
+	uint8_t Key4_BL;
+	uint8_t Key5_BL;
+	uint8_t Key6_BL;
+	uint8_t Key7_BL;
+	uint8_t Key8_BL;
+	uint8_t Key9_BL;
+	uint8_t Key10_BL;
+	uint8_t Key11_BL;
+	uint8_t Key12_BL;
+	uint8_t Key13_BL;
+	uint8_t Key14_BL;
+	uint8_t Key15_BL;
 	
 	// GPIO/GPO Drive
 	uint8_t GPIO_GPO_Drive1;	//Shared X line GPOs
@@ -312,7 +313,7 @@ typedef struct
 	
 	// Common Change keys
 	uint8_t CC_Keys1; //key0 to key7
-	uint8_t CC_Keys2; //key8 to key15	
+	uint8_t CC_Keys2; //key8 to key15
 	
 }SetupBlock;
 
