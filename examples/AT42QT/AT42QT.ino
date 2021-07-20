@@ -1,14 +1,16 @@
 #include <AT42QT.h>
 
 #define TOUCH_ADDR      0x10
-#define TOUCH_IRQ_PIN    PA5
-#define TOUCH_RTS_PIN    PA6
+#define TOUCH_IRQ_PIN   5
+#define TOUCH_RTS_PIN   6
+
+const long BAUD = 115200;
 
 /* I2C interface ===================================== */
 //HardWire I2C_WIRE(1, I2C_FAST_MODE); // Hardware I2C class
 //TwoWire I2C_WIRE(PB6, PB7, SOFT_FAST); // Software I2C class
 
-AT42QT touch();
+AT42QT touch;
 //AT42QT touch(&Wire);
 //AT42QT touch(&I2C_WIRE);
 
@@ -20,7 +22,7 @@ void TOUCH_interrupt() { TOUCH_INT_flag = true; }
 
 void setup() {
 	
-  Serial.begin();
+  Serial.begin(BAUD);
   
   pinMode(TOUCH_IRQ_PIN, INPUT_PULLUP);
   
